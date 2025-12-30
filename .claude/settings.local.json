@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cping:*)",
+      "Bash(gping:*)",
+      "Bash(D:/code/ccb/bin/cping:*)",
+      "Bash(D:/code/ccb/bin/gping:*)",
+      "Bash(D:/code/ccb/bin/cask:*)",
+      "Bash(D:/code/ccb/bin/gask:*)",
+      "Bash(D:/code/ccb/bin/cpend:*)",
+      "Bash(D:/code/ccb/bin/gpend:*)",
+      "Bash(cat:*)"
+    ]
+  }
+}

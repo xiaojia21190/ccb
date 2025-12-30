@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -27,10 +28,6 @@ func main() {
 		runAsyncAsk("codex")
 	case "gask":
 		runAsyncAsk("gemini")
-	case "cask-w":
-		runSyncAsk("codex")
-	case "gask-w":
-		runSyncAsk("gemini")
 	case "cpend":
 		runPend("codex")
 	case "gpend":
@@ -42,7 +39,8 @@ func main() {
 	default:
 		// ccb 主入口
 		if len(os.Args) < 2 {
-			printHelp()
+			println("创建符号链接到当前目录:")
+			runInstall(execPath)
 			return
 		}
 		switch os.Args[1] {
@@ -67,20 +65,38 @@ func main() {
 // 0. ccb install
 func runInstall(currentPath string) {
 	dir := filepath.Dir(currentPath)
-	links := []string{"cask", "gask", "cask-w", "gask-w", "cpend", "gpend", "cping", "gping"}
+	links := []string{"cask", "gask", "cpend", "gpend", "cping", "gping"}
 
-	fmt.Printf("Installing symlinks in %s...\n", dir)
+	fmt.Printf("Installing in %s...\n", dir)
 
 	for _, linkName := range links {
 		linkPath := filepath.Join(dir, linkName)
+		if runtime.GOOS == "windows" {
+			linkPath += ".exe"
+		}
 		// 如果文件已存在，先删除
 		if _, err := os.Lstat(linkPath); err == nil {
 			os.Remove(linkPath)
 		}
 
-		// 创建软链接
-		target := filepath.Base(currentPath)
-		err := os.Symlink(target, linkPath)
+		var err error
+		if runtime.GOOS == "windows" {
+			// Windows: 优先尝试硬链接 (Hard Link)
+			// 优点：无需管理员权限，节省空间，同步更新
+			err = os.Link(currentPath, linkPath)
+			if err != nil {
+				// 失败回退到复制
+				var input []byte
+				input, err = os.ReadFile(currentPath)
+				if err == nil {
+					err = os.WriteFile(linkPath, input, 0755)
+				}
+			}
+		} else {
+			// Unix: 创建符号链接
+			err = os.Symlink(filepath.Base(currentPath), linkPath)
+		}
+
 		if err != nil {
 			fmt.Printf("❌ Failed to create %s: %v\n", linkName, err)
 		} else {
@@ -93,8 +109,8 @@ func runInstall(currentPath string) {
 // 1. ccb up [claude] [codex] [gemini]
 func runUp(args []string) {
 	if len(args) == 0 {
-		fmt.Println("Usage: ccb up <provider>...")
-		return
+		//默认启动全部服务
+		args = []string{"claude", "codex", "gemini"}
 	}
 
 	currentPaneID := os.Getenv("WEZTERM_PANE")
@@ -260,56 +276,7 @@ func runAsyncAsk(provider string) {
 	fmt.Println("Sent.")
 }
 
-// 5. cask-w/gask-w (Sync)
-func runSyncAsk(provider string) {
-	var timeout int
-	var output string
-	fs := flag.NewFlagSet(provider+"-w", flag.ExitOnError)
-	fs.IntVar(&timeout, "timeout", 60, "timeout")
-	fs.StringVar(&output, "output", "", "output file")
-	fs.Parse(os.Args[1:])
-	msg := strings.Join(fs.Args(), " ")
-
-	if msg == "" {
-		fmt.Printf("Usage: %s <message>\n", os.Args[0])
-		os.Exit(1)
-	}
-
-	sess, err := LoadSession(provider)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: Session not active. Run 'ccb up %s' first.\n", provider)
-		os.Exit(1)
-	}
-	backend := GetBackend()
-	id := sess.PaneID
-
-	// Send
-	if err := backend.SendText(id, msg); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to send: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Wait
-	var reply string
-	if provider == "codex" {
-		reply, err = WaitCodexReply(time.Duration(timeout) * time.Second)
-	} else {
-		reply, err = WaitGeminiReply(time.Duration(timeout) * time.Second)
-	}
-
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Timeout or Error: %v\n", err)
-		os.Exit(2)
-	}
-
-	if output != "" {
-		os.WriteFile(output, []byte(reply), 0644)
-	} else {
-		fmt.Println(reply)
-	}
-}
-
-// 6. cpend/gpend
+// 5. cpend/gpend
 func runPend(provider string) {
 	n := 1
 	if len(os.Args) > 1 {
@@ -371,12 +338,10 @@ Commands:
   status                 Show backend status
 
   cask <msg>             Send to Codex (Async)
-  cask-w <msg>           Send to Codex and wait
   cpend [N]              View Codex history (last N items)
   cping                  Check Codex connection
 
   gask <msg>             Send to Gemini (Async)
-  gask-w <msg>           Send to Gemini and wait
   gpend [N]              View Gemini history
   gping                  Check Gemini connection`)
 }

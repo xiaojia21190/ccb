@@ -4,12 +4,10 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 )
 
 // 通用工具：查找最新的日志文件
@@ -29,29 +27,16 @@ func findLatestLog(dir string, pattern string) (string, error) {
 		return "", fmt.Errorf("directory not found: %s", fullDir)
 	}
 
-	// 针对 Gemini 复杂的嵌套目录结构进行递归查找
-	// 结构通常是: ~/.gemini/tmp/<hash>/chats/<session>.json
-	if strings.Contains(dir, "gemini") {
-		err = filepath.Walk(fullDir, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return nil // 忽略访问错误
-			}
-			if !info.IsDir() && strings.HasSuffix(info.Name(), pattern) {
-				matches = append(matches, path)
-			}
-			return nil
-		})
-	} else {
-		// Codex 结构较平坦: ~/.codex/sessions/*.jsonl
-		entries, err := os.ReadDir(fullDir)
-		if err == nil {
-			for _, e := range entries {
-				if !e.IsDir() && strings.HasSuffix(e.Name(), pattern) {
-					matches = append(matches, filepath.Join(fullDir, e.Name()))
-				}
-			}
+	// 递归查找所有匹配文件（Codex 和 Gemini 都有嵌套目录结构）
+	err = filepath.Walk(fullDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // 忽略访问错误
 		}
-	}
+		if !info.IsDir() && strings.Contains(info.Name(), pattern) {
+			matches = append(matches, path)
+		}
+		return nil
+	})
 
 	if len(matches) == 0 {
 		return "", fmt.Errorf("no logs found in %s", fullDir)
@@ -73,70 +58,9 @@ func findLatestLog(dir string, pattern string) (string, error) {
 
 // --- Codex 相关逻辑 ---
 
-// 等待 Codex 回复 (针对追加写入的 JSONL 文件)
-func WaitCodexReply(timeout time.Duration) (string, error) {
-	logPath, err := findLatestLog(".codex/sessions", ".jsonl")
-	if err != nil {
-		return "", err
-	}
-
-	file, err := os.Open(logPath)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	// 1. 移动到文件末尾 (Seek End)，只监听新内容
-	file.Seek(0, io.SeekEnd)
-	reader := bufio.NewReader(file)
-
-	deadline := time.Now().Add(timeout)
-
-	for time.Now().Before(deadline) {
-		// 尝试读取一行
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				// 没新内容，稍等一下再读
-				time.Sleep(100 * time.Millisecond)
-				continue
-			}
-			return "", err
-		}
-
-		// 解析新行
-		var entry CodexEntry
-		if err := json.Unmarshal([]byte(line), &entry); err == nil {
-			if entry.Type == "response_item" {
-				var payload CodexResponsePayload
-				if err := json.Unmarshal(entry.Payload, &payload); err == nil {
-					// 优先检查新版 content 字段
-					var sb strings.Builder
-					if len(payload.Content) > 0 {
-						for _, c := range payload.Content {
-							if c.Type == "output_text" {
-								sb.WriteString(c.Text)
-							}
-						}
-					}
-					// 如果 content 为空，回退到旧版 message 字段
-					if sb.Len() == 0 && payload.Message != "" {
-						sb.WriteString(payload.Message)
-					}
-
-					if sb.Len() > 0 {
-						return sb.String(), nil
-					}
-				}
-			}
-		}
-	}
-	return "", fmt.Errorf("timeout waiting for Codex reply")
-}
-
 // 获取 Codex 历史记录
 func GetCodexHistory(n int) ([]string, error) {
-	logPath, err := findLatestLog(".codex/sessions", ".jsonl")
+	logPath, err := findLatestLog(".codex/sessions", "rollout-")
 	if err != nil {
 		return nil, err
 	}
@@ -193,64 +117,6 @@ func GetCodexHistory(n int) ([]string, error) {
 }
 
 // --- Gemini 相关逻辑 ---
-
-// 等待 Gemini 回复 (针对全量重写的 JSON 文件)
-func WaitGeminiReply(timeout time.Duration) (string, error) {
-	logPath, err := findLatestLog(".gemini/tmp", ".json")
-	if err != nil {
-		// 尝试标准路径作为 fallback
-		logPath, err = findLatestLog(".gemini/chats", ".json")
-		if err != nil {
-			return "", err
-		}
-	}
-
-	lastCount := 0
-	deadline := time.Now().Add(timeout)
-
-	// 1. 获取初始状态
-	if content, err := os.ReadFile(logPath); err == nil {
-		var session GeminiSession
-		if json.Unmarshal(content, &session) == nil {
-			lastCount = len(session.Messages)
-		}
-	}
-
-	// 2. 轮询检查
-	for time.Now().Before(deadline) {
-		time.Sleep(200 * time.Millisecond)
-
-		content, err := os.ReadFile(logPath)
-		if err != nil {
-			continue
-		}
-
-		var session GeminiSession
-		if err := json.Unmarshal(content, &session); err != nil {
-			continue
-		}
-
-		if len(session.Messages) > lastCount {
-			// 发现新消息
-			newMsgs := session.Messages[lastCount:]
-			// 找到最后一条 gemini 的回复
-			for i := len(newMsgs) - 1; i >= 0; i-- {
-				msg := newMsgs[i]
-				if msg.Type == "gemini" || msg.Type == "model" { // 兼容 type 名称
-					var text string
-					// Content 可能是 string 也可能是对象
-					if err := json.Unmarshal(msg.Content, &text); err == nil {
-						return text, nil
-					}
-					// 如果解析 string 失败，可能是复杂对象，返回 JSON string 作为 fallback
-					return string(msg.Content), nil
-				}
-			}
-			lastCount = len(session.Messages)
-		}
-	}
-	return "", fmt.Errorf("timeout waiting for Gemini reply")
-}
 
 // 获取 Gemini 历史记录
 func GetGeminiHistory(n int) ([]string, error) {

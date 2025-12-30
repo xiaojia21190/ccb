@@ -8,11 +8,13 @@
 - 异步/同步发送消息到各模型
 - 查看模型历史输出
 - 自动管理会话状态
+- 支持 Windows 和 Linux
 
 ## 安装
 
 ```bash
-go build -o ccb .
+linux: go build -o ccb .
+windows: go build -o ccb.exe .
 ```
 
 ## 使用
@@ -20,6 +22,9 @@ go build -o ccb .
 ### 启动服务
 
 ```bash
+# 运行ccb安装脚本，创建符号链接到当前目录, 如果内核输出被截断，请使用管理员权限运行此命令（Windows 下需加 `.exe` 后缀） 将bin目录添加到系统PATH中
+ccb install
+
 # 启动所有模型（布局：左 Claude，右上 Gemini，右下 Codex）
 ccb up claude codex gemini
 

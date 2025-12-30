@@ -25,10 +25,10 @@ func (w *WezTermBackend) SendText(paneID string, text string) error {
 	if cleanText == "" {
 		return nil
 	}
-	if err := exec.Command("wezterm", "cli", "send-text", "--pane-id", paneID, "--no-paste", cleanText).Run(); err != nil {
+	if err := exec.Command("wezterm", "cli", "send-text", "--pane-id", paneID, "--no-paste", cleanText+"\r").Run(); err != nil {
 		return err
 	}
-	return exec.Command("wezterm", "cli", "send-text", "--pane-id", paneID, "--no-paste", "\r").Run()
+	return nil
 }
 
 func (w *WezTermBackend) IsAlive(paneID string) bool {
