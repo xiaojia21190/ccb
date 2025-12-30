@@ -97,25 +97,19 @@ func runUp(args []string) {
 		return
 	}
 
-	termName := "tmux"
 	currentPaneID := os.Getenv("WEZTERM_PANE")
-	if currentPaneID != "" {
-		termName = "wezterm"
-	}
-	backend := GetBackend(termName)
+	backend := GetBackend()
 
 	cwd, _ := os.Getwd()
 
 	// 检查要启动的服务
-	hasCodex, hasGemini, hasClaude := false, false, false
+	hasCodex, hasGemini, hasClaude := false, false, true
 	for _, p := range args {
 		switch p {
 		case "codex":
 			hasCodex = true
 		case "gemini":
 			hasGemini = true
-		case "claude":
-			hasClaude = true
 		}
 	}
 
@@ -123,7 +117,7 @@ func runUp(args []string) {
 
 	// 1. Codex 在下方
 	if hasCodex {
-		fmt.Printf("Starting codex (%s)...\n", termName)
+		fmt.Println("Starting codex...")
 		paneID, err := backend.CreatePane("codex -c disable_paste_burst=true", cwd, "bottom")
 		if err != nil {
 			fmt.Printf("Error starting codex: %v\n", err)
@@ -132,7 +126,6 @@ func runUp(args []string) {
 			time.Sleep(500 * time.Millisecond)
 			sess := &LocalSession{
 				SessionID: fmt.Sprintf("codex-%d", time.Now().Unix()),
-				Terminal:  termName,
 				PaneID:    paneID,
 				Active:    true,
 				WorkDir:   cwd,
@@ -144,8 +137,8 @@ func runUp(args []string) {
 	}
 
 	// 2. Gemini 在 Codex 右边
-	if hasGemini && codexPaneID != "" {
-		fmt.Printf("Starting gemini (%s)...\n", termName)
+	if hasGemini {
+		fmt.Println("Starting gemini...")
 		paneID, err := backend.CreatePaneAt(codexPaneID, "gemini", cwd, "right")
 		if err != nil {
 			fmt.Printf("Error starting gemini: %v\n", err)
@@ -153,26 +146,6 @@ func runUp(args []string) {
 			time.Sleep(500 * time.Millisecond)
 			sess := &LocalSession{
 				SessionID: fmt.Sprintf("gemini-%d", time.Now().Unix()),
-				Terminal:  termName,
-				PaneID:    paneID,
-				Active:    true,
-				WorkDir:   cwd,
-				StartedAt: time.Now().Format(time.RFC3339),
-			}
-			SaveSession("gemini", sess)
-			fmt.Printf("✅ gemini started. ID: %s\n", paneID)
-		}
-	} else if hasGemini {
-		// 没有 codex 时，gemini 在下方
-		fmt.Printf("Starting gemini (%s)...\n", termName)
-		paneID, err := backend.CreatePane("gemini", cwd, "bottom")
-		if err != nil {
-			fmt.Printf("Error starting gemini: %v\n", err)
-		} else {
-			time.Sleep(500 * time.Millisecond)
-			sess := &LocalSession{
-				SessionID: fmt.Sprintf("gemini-%d", time.Now().Unix()),
-				Terminal:  termName,
 				PaneID:    paneID,
 				Active:    true,
 				WorkDir:   cwd,
@@ -185,7 +158,7 @@ func runUp(args []string) {
 
 	// 3. Claude 在最下方（占满宽度）
 	if hasClaude {
-		fmt.Printf("Starting claude (%s)...\n", termName)
+		fmt.Println("Starting claude...")
 		paneID, err := backend.CreatePane("claude", cwd, "bottom")
 		if err != nil {
 			fmt.Printf("Error starting claude: %v\n", err)
@@ -193,7 +166,6 @@ func runUp(args []string) {
 			time.Sleep(500 * time.Millisecond)
 			sess := &LocalSession{
 				SessionID: fmt.Sprintf("claude-%d", time.Now().Unix()),
-				Terminal:  termName,
 				PaneID:    paneID,
 				Active:    true,
 				WorkDir:   cwd,
@@ -208,6 +180,11 @@ func runUp(args []string) {
 	if currentPaneID != "" && (hasCodex || hasGemini || hasClaude) {
 		time.Sleep(300 * time.Millisecond)
 		exec.Command("wezterm", "cli", "kill-pane", "--pane-id", currentPaneID).Run()
+	}
+
+	//光标转移到claude窗格
+	if hasClaude {
+		backend.FocusPanel("claude")
 	}
 }
 
@@ -224,11 +201,8 @@ func runKill(args []string) {
 			continue
 		}
 
-		backend := GetBackend(sess.Terminal)
-		id := sess.TmuxSession
-		if sess.Terminal == "wezterm" {
-			id = sess.PaneID
-		}
+		backend := GetBackend()
+		id := sess.PaneID
 
 		// 调用 KillPane
 		if err := backend.KillPane(id); err != nil {
@@ -246,14 +220,11 @@ func runStatus() {
 		sess, err := LoadSession(p)
 		status := "Stopped"
 		if err == nil {
-			backend := GetBackend(sess.Terminal)
-			id := sess.TmuxSession
-			if sess.Terminal == "wezterm" {
-				id = sess.PaneID
-			}
+			backend := GetBackend()
+			id := sess.PaneID
 
 			if backend.IsAlive(id) {
-				status = fmt.Sprintf("Running (%s: %s)", sess.Terminal, id)
+				status = fmt.Sprintf("Running (pane: %s)", id)
 			} else {
 				status = "Dead (Process missing)"
 			}
@@ -279,11 +250,8 @@ func runAsyncAsk(provider string) {
 		os.Exit(1)
 	}
 
-	backend := GetBackend(sess.Terminal)
-	id := sess.TmuxSession
-	if sess.Terminal == "wezterm" {
-		id = sess.PaneID
-	}
+	backend := GetBackend()
+	id := sess.PaneID
 
 	if err := backend.SendText(id, msg); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to send: %v\n", err)
@@ -312,11 +280,8 @@ func runSyncAsk(provider string) {
 		fmt.Fprintf(os.Stderr, "Error: Session not active. Run 'ccb up %s' first.\n", provider)
 		os.Exit(1)
 	}
-	backend := GetBackend(sess.Terminal)
-	id := sess.TmuxSession
-	if sess.Terminal == "wezterm" {
-		id = sess.PaneID
-	}
+	backend := GetBackend()
+	id := sess.PaneID
 
 	// Send
 	if err := backend.SendText(id, msg); err != nil {
@@ -382,14 +347,11 @@ func runPing(provider string) {
 		os.Exit(1)
 	}
 
-	backend := GetBackend(sess.Terminal)
-	id := sess.TmuxSession
-	if sess.Terminal == "wezterm" {
-		id = sess.PaneID
-	}
+	backend := GetBackend()
+	id := sess.PaneID
 
 	if backend.IsAlive(id) {
-		fmt.Printf("✅ %s connection OK (%s: %s)\n", provider, sess.Terminal, id)
+		fmt.Printf("✅ %s connection OK (pane: %s)\n", provider, id)
 	} else {
 		fmt.Printf("❌ %s: Process dead but session file exists\n", provider)
 		os.Exit(1)

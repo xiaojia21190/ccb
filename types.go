@@ -31,11 +31,9 @@ type GeminiMessage struct {
 
 // 本地会话状态 (.codex-session / .gemini-session)
 type LocalSession struct {
-	SessionID   string `json:"session_id"`
-	Terminal    string `json:"terminal"`     // "tmux" or "wezterm"
-	PaneID      string `json:"pane_id"`      // WezTerm pane ID
-	TmuxSession string `json:"tmux_session"` // Tmux session name
-	Active      bool   `json:"active"`
-	WorkDir     string `json:"work_dir"`
-	StartedAt   string `json:"started_at"`
+	SessionID string `json:"session_id"`
+	PaneID    string `json:"pane_id"`
+	Active    bool   `json:"active"`
+	WorkDir   string `json:"work_dir"`
+	StartedAt string `json:"started_at"`
 }

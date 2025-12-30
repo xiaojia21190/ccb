@@ -2,11 +2,9 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"os/exec"
 	"runtime"
 	"strings"
-	"time"
 )
 
 // TerminalBackend 定义了终端操作的通用接口
@@ -16,45 +14,7 @@ type TerminalBackend interface {
 	CreatePane(cmd string, cwd string, direction string) (string, error)
 	CreatePaneAt(targetPaneID string, cmd string, cwd string, direction string) (string, error)
 	KillPane(paneID string) error
-}
-
-// --- Tmux 实现 ---
-type TmuxBackend struct{}
-
-func (t *TmuxBackend) SendText(paneID string, text string) error {
-	cleanText := strings.TrimSpace(text)
-	if cleanText == "" {
-		return nil
-	}
-	if err := exec.Command("tmux", "send-keys", "-t", paneID, "-l", cleanText).Run(); err != nil {
-		return err
-	}
-	return exec.Command("tmux", "send-keys", "-t", paneID, "Enter").Run()
-}
-
-func (t *TmuxBackend) IsAlive(paneID string) bool {
-	err := exec.Command("tmux", "has-session", "-t", paneID).Run()
-	return err == nil
-}
-
-func (t *TmuxBackend) CreatePane(cmd string, cwd string, direction string) (string, error) {
-	sessionName := fmt.Sprintf("ai-%d", time.Now().UnixNano())
-	// -d: detached, -s: session name, -c: cwd
-	c := exec.Command("tmux", "new-session", "-d", "-s", sessionName, "-c", cwd, cmd)
-	if err := c.Run(); err != nil {
-		return "", err
-	}
-	return sessionName, nil
-}
-
-func (t *TmuxBackend) KillPane(paneID string) error {
-	// 对于 Tmux，paneID 就是 session name
-	return exec.Command("tmux", "kill-session", "-t", paneID).Run()
-}
-
-func (t *TmuxBackend) CreatePaneAt(targetPaneID string, cmd string, cwd string, direction string) (string, error) {
-	// Tmux 暂不支持，使用普通创建
-	return t.CreatePane(cmd, cwd, direction)
+	FocusPanel(panel string) error
 }
 
 // --- WezTerm 实现 ---
@@ -135,10 +95,16 @@ func (w *WezTermBackend) CreatePaneAt(targetPaneID string, cmd string, cwd strin
 	return strings.TrimSpace(string(out)), nil
 }
 
-// 工厂函数
-func GetBackend(name string) TerminalBackend {
-	if name == "wezterm" {
-		return &WezTermBackend{}
+func (w *WezTermBackend) FocusPanel(panel string) error {
+	sess, err := LoadSession(panel)
+	if err != nil {
+		return err
 	}
-	return &TmuxBackend{}
+	paneID := sess.PaneID
+	return exec.Command("wezterm", "cli", "activate-pane", "--pane-id", paneID).Run()
+}
+
+// 工厂函数
+func GetBackend() TerminalBackend {
+	return &WezTermBackend{}
 }

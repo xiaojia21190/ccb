@@ -4,7 +4,7 @@
 
 ## 功能
 
-- 在 WezTerm/tmux 中启动多个 AI CLI 会话
+- 在 WezTerm 中启动多个 AI CLI 会话
 - 异步/同步发送消息到各模型
 - 查看模型历史输出
 - 自动管理会话状态
@@ -59,7 +59,7 @@ ccb gping      # 测试 Gemini 连接
 ## 环境要求
 
 - Go 1.20+
-- WezTerm 或 tmux
+- WezTerm
 - Claude CLI / Codex CLI / Gemini CLI
 
 ## 许可
