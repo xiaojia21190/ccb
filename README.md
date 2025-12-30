@@ -25,7 +25,7 @@ windows: go build -o ccb.exe .
 # 运行ccb安装脚本，创建符号链接到当前目录, 如果内核输出被截断，请使用管理员权限运行此命令（Windows 下需加 `.exe` 后缀） 将bin目录添加到系统PATH中
 ccb install
 
-# 启动所有模型（布局：左 Claude，右上 Gemini，右下 Codex）
+# 启动所有模型（布局：上 Claude，右下 Gemini，左下 Codex）
 ccb up claude codex gemini
 
 # 单独启动
