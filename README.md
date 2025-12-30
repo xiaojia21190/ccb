@@ -2,6 +2,9 @@
 
 多模型 AI 协作桥接工具，支持 Claude、Codex、Gemini 在终端中并行运行。
 
+<img width="3840" height="2047" alt="image" src="https://github.com/user-attachments/assets/40927d99-024b-49d9-bde5-85a61c78fa96" />
+
+
 ## 功能
 
 - 在 WezTerm 中启动多个 AI CLI 会话
