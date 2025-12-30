@@ -280,7 +280,7 @@ func runAsyncAsk(provider string) {
 func runPend(provider string) {
 	n := 1
 	if len(os.Args) > 1 {
-		if val, err := strconv.Atoi(os.Args[1]); err == nil {
+		if val, err := strconv.Atoi(os.Args[len(os.Args)-1]); err == nil {
 			n = val
 		}
 	}
